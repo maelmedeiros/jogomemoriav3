@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Jogo da Memória Online</title>
+<style>
+body { 
+  font-family: Arial, sans-serif; 
+  text-align: center; 
+  background: #f0f0f0; 
+  margin: 0; 
+  padding: 20px; 
+}
+h1 { margin-bottom: 10px; }
+button { 
+  padding: 10px 18px; 
+  font-size: 16px; 
+  border: none; 
+  border-radius: 8px; 
+  cursor: pointer; 
+  margin: 5px; 
+}
+button.primary { background: #38bdf8; color: #001018; }
+button.success { background: #22c55e; color: #01240f; }
+
+.stats { margin-top: 10px; font-size: 16px; }
+
+/* 🔹 Barra de aviso */
+.warning-bar {
+  display: none;
+  background: #dc2626;
+  color: white;
+  font-weight: bold;
+  padding: 10px;
+  margin-top: 10px;
+  border-radius: 8px;
+}
+
+/* 🔹 Responsividade */
+.game-board { 
+  display: grid; 
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); 
+  gap: 12px; 
+  justify-content: center; 
+  margin-top: 20px; 
+  max-width: 500px; 
+  margin-left: auto; 
+  margin-right: auto; 
+}
+.card { 
+  aspect-ratio: 1/1;
+  width: 100%; 
+  background: #3498db; 
+  border-radius: 10px; 
+  cursor: pointer; 
+  position: relative; 
+  transform-style: preserve-3d; 
+  transition: transform 0.5s; 
+}
+.card.flip { transform: rotateY(180deg); }
+
+.face { 
+  position: absolute; 
+  width: 100%; 
+  height: 100%; 
+  backface-visibility: hidden; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  border-radius: 10px; 
+}
+.front { background: #3498db; font-size: 40px; color: white; }
+.back { 
+  transform: rotateY(180deg); 
+  background-size: cover; 
+  background-position: center; 
+}
+.hidden { visibility: hidden; }
+
+.dialog { 
+  position: fixed; 
+  inset: 0; 
+  display: none; 
+  place-items: center; 
+  background: rgba(0,0,0,0.4); 
+}
+.dialog.open { display: grid; }
+.dialog .box { 
+  background: #fff; 
+  padding: 20px; 
+  border-radius: 16px; 
+  text-align: center; 
+}
+</style>
+</head>
+<body>
+<h1>Jogo da Memória</h1>
+<div class="stats">⏱️ Tempo: <b id="time">00:00</b> | 🎯 Movimentos: <b id="moves">0</b> | 🧩 Pares: <b id="pairs">0</b></div>
+
+<div id="warning" class="warning-bar">⚠️ Faltam 3 movimentos!</div>
+
+<br>
+<input type="file" id="fileInput" multiple accept="image/*" />
+<br>
+<button id="startBtn" class="primary">Iniciar</button>
+<button id="restartBtn" class="success" disabled>Reiniciar</button>
+
+<div class="game-board" id="gameBoard"></div>
+
+<div class="dialog" id="winDialog">
+  <div class="box">
+    <h2 id="endTitle">🥳 Parabéns!</h2>
+    <p id="endMessage">Você encontrou todos os pares!</p>
+    <p>Tempo: <span id="winTime">00:00</span> | Movimentos: <span id="winMoves">0</span></p>
+    <button id="playAgain" class="success">Jogar de novo</button>
+  </div>
+</div>
+
+<audio id="soundSuccess" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
+<audio id="soundFail" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"></audio>
+
+<script>
+const defaultImages = [
+  "https://drive.google.com/file/d/1T7ScS9Fx593YTLVMDqbtWmBhmet-ZdCk/view?usp=sharing",
+  "https://drive.google.com/file/d/1td4jgcc2c9nmjXiSvjPf3knwCIWYjNyE/view?usp=sharing",
+  "https://drive.google.com/file/d/1LkUEIcW0LJ-ZbqyOX_O6yJxqpcc8hLLN/view?usp=sharing",
+  "https://drive.google.com/file/d/1Ylq2n7Eql7MOF49DrR2wt_E1ElYH9M73/view?usp=sharing",
+  "https://drive.google.com/file/d/1KwuWE5DaHfoCkq-YYCxOMjuTb4RhgCeu/view?usp=sharing",
+  "https://drive.google.com/file/d/1JshO5XkSPJLEW3asb4soTk35cUXprNVY/view?usp=sharing",
+  "https://drive.google.com/file/d/14NBvPuUx900z5f5BLbiInvqhxP9maaP2/view?usp=sharing",
+  "https://drive.google.com/file/d/1QHg2FLaJ4TCZOF-OI6llzINAQlubv_R1/view?usp=sharing"
+];
+
+const board = document.getElementById('gameBoard');
+const timeEl = document.getElementById('time');
+const movesEl = document.getElementById('moves');
+const pairsEl = document.getElementById('pairs');
+const startBtn = document.getElementById('startBtn');
+const restartBtn = document.getElementById('restartBtn');
+const fileInput = document.getElementById('fileInput');
+const dialog = document.getElementById('winDialog');
+const winTime = document.getElementById('winTime');
+const winMoves = document.getElementById('winMoves');
+const playAgain = document.getElementById('playAgain');
+const soundSuccess = document.getElementById('soundSuccess');
+const soundFail = document.getElementById('soundFail');
+const endTitle = document.getElementById('endTitle');
+const endMessage = document.getElementById('endMessage');
+const warning = document.getElementById('warning');
+
+let firstCard = null;
+let lockBoard = false;
+let timer = null;
+let seconds = 0;
+let moves = 0;
+let matches = 0;
+let totalPairs = 0;
+let selectedImages = [];
+const moveLimit = 10; // 🔹 limite fixo
+
+function format(s){ 
+  const m=Math.floor(s/60).toString().padStart(2,'0'); 
+  const ss=(s%60).toString().padStart(2,'0'); 
+  return `${m}:${ss}`; 
+}
+function shuffle(arr){ 
+  return arr.map(v=>({v,r:Math.random()})).sort((a,b)=>a.r-b.r).map(o=>o.v); 
+}
+
+function resetStats(){
+  seconds=0; moves=0; matches=0;
+  timeEl.textContent='00:00'; movesEl.textContent='0'; pairsEl.textContent='0';
+  warning.style.display = "none";
+  if(timer){ clearInterval(timer); timer=null; }
+}
+
+function startTimer(){ 
+  if(timer) return; 
+  timer=setInterval(()=>{seconds++; timeEl.textContent=format(seconds);},1000); 
+}
+function stopTimer(){ 
+  if(timer){ clearInterval(timer); timer=null; } 
+}
+
+function buildDeck(images){ 
+  const deck = images.concat(images); 
+  return shuffle(deck); 
+}
+
+function render(images){
+  board.innerHTML='';
+  const deck = buildDeck(images);
+  totalPairs = images.length;
+  deck.forEach(src=>{
+    const card = document.createElement('div');
+    card.className='card';
+    card.dataset.image = src;
+    card.innerHTML = `<div class='face front'></div><div class='face back' style='background-image:url(${src})'></div>`;
+    card.addEventListener('click', onFlip);
+    board.appendChild(card);
+  });
+}
+
+async function onFlip(){
+  if(lockBoard) return;
+  if(this.classList.contains('flip')) return;
+  if(!timer) startTimer();
+  this.classList.add('flip');
+  if(!firstCard){ firstCard=this; return; }
+  moves++; movesEl.textContent=moves;
+
+  // 🔹 Aviso quando faltam 3 movimentos
+  if(moveLimit - moves === 3){
+    warning.style.display = "block";
+  }
+
+  // 🔹 Verifica se atingiu o limite
+  if(moves >= moveLimit){
+    stopTimer();
+    endTitle.textContent = "😢 Não foi dessa vez!";
+    endMessage.textContent = "Você atingiu o limite de movimentos!";
+    winTime.textContent = format(seconds);
+    winMoves.textContent = moves;
+    dialog.classList.add('open');
+    return;
+  }
+
+  if(this.dataset.image===firstCard.dataset.image){
+    matches++; pairsEl.textContent=matches; soundSuccess.play();
+    const a=this,b=firstCard; firstCard=null; lockBoard=true; 
+    await new Promise(r=>setTimeout(r,300)); 
+    a.classList.add('hidden'); b.classList.add('hidden'); lockBoard=false;
+    if(matches===totalPairs){ 
+      stopTimer(); 
+      endTitle.textContent="🥳 Parabéns!"; 
+      endMessage.textContent="Você encontrou todos os pares!"; 
+      winTime.textContent=format(seconds); 
+      winMoves.textContent=moves; 
+      dialog.classList.add('open'); 
+    }
+  } else { 
+    soundFail.play(); 
+    const a=this,b=firstCard; firstCard=null; lockBoard=true; 
+    await new Promise(r=>setTimeout(r,700)); 
+    a.classList.remove('flip'); b.classList.remove('flip'); 
+    lockBoard=false; 
+  }
+}
+
+function startGame(){
+  resetStats();
+  selectedImages = fileInput.files.length>=2 ? Array.from(fileInput.files).map(f=>URL.createObjectURL(f)) : [...defaultImages];
+  render(selectedImages);
+  restartBtn.disabled=false;
+  dialog.classList.remove('open');
+}
+
+startBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('click', startGame);
+playAgain.addEventListener('click', startGame);
+</script>
+</body>
+</html>
